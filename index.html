@@ -87,32 +87,45 @@
       }
       return `<span class="time-badge">🕐 ${h.map(escapeHtml).join(' • ')}</span>`;
     }
-    function dayMatches(day, worker, terms){
+    function dayMatches(day, terms){
       if(!terms.length) return true;
-      const text=normalizeText(`${worker.name} ${worker.code} ${day.date} ${day.day} ${day.task} ${(day.hours||[]).join(' ')}`);
+      const text=normalizeText(`${day.date} ${day.day} ${day.task} ${(day.hours||[]).join(' ')}`);
+      const key=searchKey(text);
+      return terms.every(t=>text.includes(t) || key.includes(searchKey(t)));
+    }
+    function workerMatches(worker, terms){
+      if(!terms.length) return true;
+      const text=normalizeText(`${worker.name} ${worker.code}`);
       const key=searchKey(text);
       return terms.every(t=>text.includes(t) || key.includes(searchKey(t)));
     }
     function searchWorkSchedule(){
-      const raw=(($('workScheduleSearch')?.value)||'').trim(), container=$('workScheduleResults');
-      if(!container)return;
-      const terms=normalizeText(raw).split(/[\s,]+/).filter(Boolean);
-      if(!terms.length){
-        container.innerHTML='<div class="empty-state">🔎 הקלד שם, קוד עובד, תאריך, שעה, משימה או מקום כדי להתחיל.</div>';
+      const input=$('workScheduleSearch'), container=$('workScheduleResults');
+      if(!input || !container) return;
+      const raw=input.value.trim();
+      if(!raw){
+        container.innerHTML='<div class="empty-state">🔎 הקלד שם עובד או קוד כדי להתחיל.</div>';
         return;
       }
+      const terms=normalizeText(raw).split(/[\s,]+/).filter(Boolean);
       const results=[];
-      WORK_SCHEDULE.forEach(w=>{
-        const days=w.days.filter(d=>dayMatches(d,w,terms));
-        if(days.length) results.push({worker:w,days});
+      WORK_SCHEDULE.forEach(worker=>{
+        // First: if the query identifies the worker (name/code), show that worker.
+        const workerHit=workerMatches(worker,terms);
+        // Otherwise search inside the daily schedule. This makes searches like "מונית",
+        // "חמישי", "01/10/2026", or "D01 חמישי" behave naturally.
+        const days=workerHit
+          ? (terms.length===1 ? worker.days : worker.days.filter(d=>dayMatches(d,terms.filter(t=>!normalizeText(`${worker.name} ${worker.code}`).includes(t)))))
+          : worker.days.filter(d=>dayMatches(d,terms));
+        if(days.length) results.push({worker,days});
       });
       const totalDays=results.reduce((n,r)=>n+r.days.length,0);
       if(!results.length){
-        container.innerHTML=`<div class="empty-state"><div style="font-size:24px">🔍</div><b>לא נמצאו תוצאות</b><div style="margin-top:6px">נסה שם פרטי, קוד עובד, יום, תאריך או מילה מהמשימה.</div></div>`;
+        container.innerHTML=`<div class="empty-state"><div style="font-size:28px">🔍</div><b>לא מצאתי תוצאה</b><div style="margin-top:6px">נסה שם פרטי, שם משפחה, קוד כמו D01, יום כמו חמישי או מילה כמו מונית.</div></div>`;
         return;
       }
-      const header=`<div class="result-meta"><span class="result-pill blue">👥 ${results.length} עובדים</span><span class="result-pill green">📅 ${totalDays} ימים</span><span class="result-pill">🔎 ${escapeHtml(raw)}</span></div>`;
-      container.innerHTML=header+results.map((r,i)=>`<details class="schedule-result" ${results.length===1?'open':''}><summary><div class="worker-head"><b>${escapeHtml(r.worker.name)}</b><span class="worker-code">${escapeHtml(r.worker.code)}</span></div></summary><div class="compact-week">${r.days.map(d=>`<div class="compact-day"><span class="compact-date">${escapeHtml(d.day)}<br><small>${escapeHtml(d.date)}</small></span><span class="compact-task">${escapeHtml(d.task)}</span><span class="compact-hours">${formatHours(d.hours,d.task)}</span></div>`).join('')}</div></details>`).join('');
+      const header=`<div class="result-meta"><span class="result-pill blue">👥 ${results.length} עובדים</span><span class="result-pill green">📅 ${totalDays} ימים</span></div>`;
+      container.innerHTML=header+results.map(r=>`<details class="schedule-result" ${results.length===1?'open':''}><summary><div class="worker-head"><b>${escapeHtml(r.worker.name)}</b><span class="worker-code">${escapeHtml(r.worker.code)}</span></div></summary><div class="compact-week">${r.days.map(d=>`<div class="compact-day"><span class="compact-date">${escapeHtml(d.day)}<br><small>${escapeHtml(d.date)}</small></span><span class="compact-task">${escapeHtml(d.task)}</span><span class="compact-hours">${formatHours(d.hours,d.task)}</span></div>`).join('')}</div></details>`).join('');
     }
     function setScheduleSearch(val){if($('workScheduleSearch')){$('workScheduleSearch').value=val;searchWorkSchedule()}}
     function clearWorkScheduleSearch(){if($('workScheduleSearch')){$('workScheduleSearch').value='';searchWorkSchedule()}}
